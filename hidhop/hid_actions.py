@@ -66,9 +66,12 @@ class HIDController:
             raise ValueError("invalid mouse action")
 
     def mouse_scroll(self, vertical, horizontal):
-        self.mouse.move(wheel=max(-127, min(127, vertical)))
-        if horizontal:
-            self.mouse.move(wheel=max(-127, min(127, horizontal)))
+        v = max(-127, min(127, vertical))
+        h = max(-127, min(127, horizontal))
+        try:
+            self.mouse.move(wheel=v, pan=h)
+        except TypeError:
+            self.mouse.move(wheel=v)
 
     def keyboard_type(self, modifiers, text):
         mod_keys = self._modifier_keycodes(modifiers)
