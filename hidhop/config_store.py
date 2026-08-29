@@ -1,11 +1,18 @@
 """Persistent settings in microcontroller.nvm with checksum and fallback."""
 
+try:
+    import adafruit_logging as logging
+except ImportError:  # host test fallback
+    import logging
+
 from hidhop import constants as c
 
 try:
     import microcontroller
 except ImportError:  # host test fallback
     microcontroller = None
+
+logger = logging.getLogger("hidhop.config_store")
 
 _MAGIC = b"HHP1"
 _VERSION = 1
@@ -18,8 +25,10 @@ class ConfigStore:
     def __init__(self):
         if microcontroller is not None:
             self._nvm = microcontroller.nvm
+            logger.debug("ConfigStore using microcontroller NVM")
         else:
             self._nvm = bytearray(64)
+            logger.debug("ConfigStore using in-memory fallback NVM")
         self.device_name = "HID-HOP"
         self.pin = "123456"
         self._load_or_defaults()
@@ -30,6 +39,7 @@ class ConfigStore:
     def _load_or_defaults(self):
         raw = bytes(self._nvm[:_LAYOUT_SIZE])
         if len(raw) < _LAYOUT_SIZE:
+            logger.warning("NVM layout too small; writing defaults")
             self.save()
             return
         body = raw[:-1]
@@ -38,24 +48,33 @@ class ConfigStore:
             or raw[4] != _VERSION
             or raw[-1] != self._checksum(body)
         ):
+            logger.warning("NVM signature/version/checksum invalid; writing defaults")
             self.save()
             return
         name_len = raw[5]
         pin_len = raw[6]
         if name_len > c.MAX_DEVICE_NAME_LENGTH or pin_len > c.MAX_PIN_LENGTH:
+            logger.warning("NVM field lengths invalid; writing defaults")
             self.save()
             return
         try:
             name = raw[_NAME_OFFSET : _NAME_OFFSET + name_len].decode("utf-8")
             pin = raw[_PIN_OFFSET : _PIN_OFFSET + pin_len].decode("ascii")
         except UnicodeError:
+            logger.warning("NVM text decode failed; writing defaults")
             self.save()
             return
         if pin and (not pin.isdigit() or len(pin) < c.MIN_PIN_LENGTH):
+            logger.warning("Stored PIN is invalid; writing defaults")
             self.save()
             return
         self.device_name = name if name else "HID-HOP"
         self.pin = pin
+        logger.info(
+            "Configuration loaded: device_name=%s pin_enabled=%s",
+            self.device_name,
+            bool(self.pin),
+        )
 
     def save(self):
         buf = bytearray(_LAYOUT_SIZE)
@@ -69,24 +88,31 @@ class ConfigStore:
         buf[_PIN_OFFSET : _PIN_OFFSET + len(pin_bytes)] = pin_bytes
         buf[-1] = self._checksum(buf[:-1])
         self._nvm[:_LAYOUT_SIZE] = buf
+        logger.debug("Configuration saved to NVM")
 
     def set_name(self, name):
         encoded = name.encode("utf-8")
         if not encoded or len(encoded) > c.MAX_DEVICE_NAME_LENGTH:
+            logger.warning("Rejected invalid device name update")
             return False
         self.device_name = encoded.decode("utf-8")
         self.save()
+        logger.info("Updated device name to %s", self.device_name)
         return True
 
     def set_pin(self, pin):
         if pin == "":
             self.pin = ""
             self.save()
+            logger.warning("PIN disabled")
             return True
         if len(pin) < c.MIN_PIN_LENGTH or len(pin) > c.MAX_PIN_LENGTH:
+            logger.warning("Rejected PIN update due to invalid length")
             return False
         if not pin.isdigit():
+            logger.warning("Rejected PIN update due to non-numeric value")
             return False
         self.pin = pin
         self.save()
+        logger.info("PIN updated")
         return True

@@ -1,6 +1,10 @@
 """USB HID action handlers."""
 
 import time
+try:
+    import adafruit_logging as logging
+except ImportError:  # host test fallback
+    import logging
 
 import usb_hid
 import supervisor
@@ -10,6 +14,8 @@ from adafruit_hid.keycode import Keycode
 from adafruit_hid.mouse import Mouse
 from adafruit_hid.consumer_control import ConsumerControl
 
+logger = logging.getLogger("hidhop.hid_actions")
+
 
 class HIDController:
     def __init__(self):
@@ -17,6 +23,7 @@ class HIDController:
         self.layout = KeyboardLayoutUS(self.keyboard)
         self.mouse = Mouse(usb_hid.devices)
         self.consumer = ConsumerControl(usb_hid.devices)
+        logger.info("HID controller initialized")
 
     @staticmethod
     def usb_connected():
@@ -64,6 +71,7 @@ class HIDController:
         elif action == 2:
             self.mouse.click(mapped)
         else:
+            logger.warning("Rejected invalid mouse action=%s", action)
             raise ValueError("invalid mouse action")
 
     def mouse_scroll(self, vertical, horizontal):
@@ -92,6 +100,7 @@ class HIDController:
             time.sleep(0.01)
             self.keyboard.release(*(keys + [keycode]))
         else:
+            logger.warning("Rejected invalid keyboard action=%s", action)
             raise ValueError("invalid key action")
 
     def keyboard_combo(self, modifiers, keycodes):
@@ -108,4 +117,5 @@ class HIDController:
         elif action == 0:
             self.consumer.release()
         else:
+            logger.warning("Rejected invalid media action=%s", action)
             raise ValueError("invalid media action")
