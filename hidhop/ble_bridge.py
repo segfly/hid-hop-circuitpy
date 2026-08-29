@@ -73,6 +73,8 @@ class HIDHopBridge:
         self.service = HIDHopService()
         self._connected = False
         self._start_time = time.monotonic()
+        self._last_rx_time = self._start_time
+        self._last_no_data_log = self._start_time
         self._rx_buffer = bytearray()
         self._start_advertising(self.config.device_name)
         logger.info("BLE bridge initialized with device_name=%s", self.config.device_name)
@@ -106,12 +108,21 @@ class HIDHopBridge:
     def _update_connection_state(self):
         is_connected = bool(self.ble.connected)
         if self._connected and not is_connected:
+            was_advertising = bool(self.ble.advertising)
             self.pin_auth.reset_session()
             self._rx_buffer = bytearray()
-            logger.info("BLE disconnected; auth session reset")
+            logger.info(
+                "BLE disconnected; auth session reset; advertising_before_restart=%s",
+                was_advertising,
+            )
+            self._start_advertising(self.config.device_name)
         elif (not self._connected) and is_connected:
-            logger.info("BLE connected")
+            now = time.monotonic()
+            self._last_rx_time = now
+            self._last_no_data_log = now
+            logger.info("BLE connected; awaiting command traffic")
         if not is_connected and not self.ble.advertising:
+            logger.warning("BLE not connected and not advertising; restarting advertising")
             self._start_advertising(self.config.device_name)
         self._connected = is_connected
 
@@ -250,13 +261,31 @@ class HIDHopBridge:
 
     def run_forever(self):
         while True:
-            self._update_connection_state()
-            incoming = self.service.command
-            if self.ble.connected and incoming.in_waiting:
-                chunk = incoming.read(incoming.in_waiting)
-                if chunk:
-                    self._feed(bytes(chunk))
-            time.sleep(0.01)
+            try:
+                self._update_connection_state()
+                incoming = self.service.command
+                if self.ble.connected:
+                    bytes_waiting = incoming.in_waiting
+                    if bytes_waiting:
+                        logger.debug("BLE command bytes available=%s", bytes_waiting)
+                        chunk = incoming.read(bytes_waiting)
+                        if chunk:
+                            now = time.monotonic()
+                            self._last_rx_time = now
+                            self._last_no_data_log = now
+                            self._feed(bytes(chunk))
+                    else:
+                        now = time.monotonic()
+                        if now - self._last_no_data_log >= 5:
+                            logger.debug(
+                                "BLE connected but no command bytes for %s seconds",
+                                int(now - self._last_rx_time),
+                            )
+                            self._last_no_data_log = now
+                time.sleep(0.01)
+            except Exception as exc:
+                logger.error("Runtime loop error; continuing: %s", exc)
+                time.sleep(0.1)
 
     def _feed(self, chunk):
         self._rx_buffer.extend(chunk)
