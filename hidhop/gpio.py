@@ -2,8 +2,14 @@
 
 import digitalio
 import board
+try:
+    import adafruit_logging as logging
+except ImportError:  # host test fallback
+    import logging
 
 from hidhop import constants as c
+
+logger = logging.getLogger("hidhop.gpio")
 
 
 class GPIOController:
@@ -38,8 +44,13 @@ class GPIOController:
                 io.direction = digitalio.Direction.OUTPUT
                 io.value = active_low
                 led_ios.append(io)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Failed to initialize LED pin: %s", exc)
+        logger.info(
+            "GPIO initialized: led_count=%s active_low=%s",
+            len(led_ios),
+            self._active_low,
+        )
         return led_ios
 
     def _apply(self):
@@ -51,14 +62,17 @@ class GPIOController:
         if led_index == 0xFF:
             self._led_state = state & 0x07
             self._apply()
+            logger.debug("Set all LEDs with bitmask=0x%02x", self._led_state)
             return True
         if led_index >= c.GPIO_LED_COUNT or state not in (0, 1):
+            logger.warning("Rejected invalid LED state update")
             return False
         if state:
             self._led_state |= 1 << led_index
         else:
             self._led_state &= ~(1 << led_index)
         self._apply()
+        logger.debug("Set LED index=%s state=%s", led_index, state)
         return True
 
     def get_led_state(self):

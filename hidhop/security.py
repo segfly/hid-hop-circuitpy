@@ -1,8 +1,14 @@
 """Application-level PIN auth with lockout and constant-time comparison."""
 
 import time
+try:
+    import adafruit_logging as logging
+except ImportError:  # host test fallback
+    import logging
 
 from hidhop import constants as c
+
+logger = logging.getLogger("hidhop.security")
 
 
 def constant_time_equals(a, b):
@@ -28,6 +34,7 @@ class PinAuth:
 
     def reset_session(self):
         self._authenticated = False
+        logger.debug("Session authentication reset")
 
     def _now(self):
         return int(time.monotonic())
@@ -35,24 +42,29 @@ class PinAuth:
     def verify_pin(self, candidate_pin):
         now = self._now()
         if now < self._lockout_until:
+            logger.warning("PIN verification rejected during lockout")
             return False, 0
 
         expected = self._config.pin
         if expected == "":
             self._authenticated = True
             self._failed_attempts = 0
+            logger.info("PIN verification bypassed because PIN is disabled")
             return True, c.MAX_PIN_ATTEMPTS
 
         if constant_time_equals(candidate_pin.encode("ascii"), expected.encode("ascii")):
             self._authenticated = True
             self._failed_attempts = 0
+            logger.info("PIN verification succeeded")
             return True, c.MAX_PIN_ATTEMPTS
 
         self._authenticated = False
         self._failed_attempts += 1
         attempts_left = c.MAX_PIN_ATTEMPTS - self._failed_attempts
+        logger.warning("PIN verification failed; attempts_left=%s", attempts_left)
         if attempts_left <= 0:
             self._lockout_until = now + c.PIN_LOCKOUT_SECONDS
             self._failed_attempts = 0
             attempts_left = 0
+            logger.error("PIN lockout activated for %s seconds", c.PIN_LOCKOUT_SECONDS)
         return False, attempts_left
