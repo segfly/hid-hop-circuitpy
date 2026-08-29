@@ -51,7 +51,7 @@ class ConfigStore:
         except UnicodeError:
             self.save()
             return
-        if not pin.isdigit() or len(pin) < c.MIN_PIN_LENGTH:
+        if pin and (not pin.isdigit() or len(pin) < c.MIN_PIN_LENGTH):
             self.save()
             return
         self.device_name = name if name else "HID-HOP"
@@ -79,6 +79,10 @@ class ConfigStore:
         return True
 
     def set_pin(self, pin):
+        if pin == "":
+            self.pin = ""
+            self.save()
+            return True
         if len(pin) < c.MIN_PIN_LENGTH or len(pin) > c.MAX_PIN_LENGTH:
             return False
         if not pin.isdigit():
