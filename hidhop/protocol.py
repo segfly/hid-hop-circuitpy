@@ -117,3 +117,20 @@ def parse_length_prefixed_ascii(payload):
     if text_len != len(text):
         raise ValueError("length mismatch")
     return text
+
+
+def consume_stream_frames(rx_buffer, chunk):
+    data = rx_buffer + bytes(chunk)
+    packets = []
+    offset = 0
+    total_len = len(data)
+
+    while total_len - offset >= 2:
+        payload_len = data[offset + 1]
+        frame_len = 2 + payload_len
+        if total_len - offset < frame_len:
+            break
+        packets.append(data[offset : offset + frame_len])
+        offset += frame_len
+
+    return data[offset:], packets
