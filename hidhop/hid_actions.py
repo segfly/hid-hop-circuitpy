@@ -3,6 +3,7 @@
 import time
 
 import usb_hid
+import supervisor
 from adafruit_hid.keyboard import Keyboard
 from adafruit_hid.keyboard_layout_us import KeyboardLayoutUS
 from adafruit_hid.keycode import Keycode
@@ -19,7 +20,7 @@ class HIDController:
 
     @staticmethod
     def usb_connected():
-        return len(usb_hid.devices) > 0
+        return bool(supervisor.runtime.usb_connected)
 
     @staticmethod
     def _modifier_keycodes(modifiers):
@@ -75,13 +76,10 @@ class HIDController:
 
     def keyboard_type(self, modifiers, text):
         mod_keys = self._modifier_keycodes(modifiers)
-        if mod_keys:
-            self.keyboard.press(*mod_keys)
-        try:
-            self.layout.write(text.decode("utf-8"))
-        finally:
-            if mod_keys:
-                self.keyboard.release(*mod_keys)
+        for char in text.decode("utf-8"):
+            char_keys = self.layout.keycodes(char)
+            self.keyboard.press(*mod_keys, *char_keys)
+            self.keyboard.release_all()
 
     def keyboard_key(self, modifiers, keycode, action):
         keys = self._modifier_keycodes(modifiers)
