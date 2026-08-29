@@ -75,7 +75,7 @@ class HIDHopBridge:
         self._start_time = time.monotonic()
         self._last_rx_time = self._start_time
         self._last_no_data_log = self._start_time
-        self._rx_buffer = bytearray()
+        self._rx_buffer = b""
         self._start_advertising(self.config.device_name)
         logger.info("BLE bridge initialized with device_name=%s", self.config.device_name)
 
@@ -110,7 +110,7 @@ class HIDHopBridge:
         if self._connected and not is_connected:
             was_advertising = bool(self.ble.advertising)
             self.pin_auth.reset_session()
-            self._rx_buffer = bytearray()
+            self._rx_buffer = b""
             logger.info(
                 "BLE disconnected; auth session reset; advertising_before_restart=%s",
                 was_advertising,
@@ -288,13 +288,7 @@ class HIDHopBridge:
                 time.sleep(0.1)
 
     def _feed(self, chunk):
-        self._rx_buffer.extend(chunk)
+        self._rx_buffer, packets = protocol.consume_stream_frames(self._rx_buffer, chunk)
         logger.debug("Received BLE chunk len=%s rx_buffer_len=%s", len(chunk), len(self._rx_buffer))
-        while len(self._rx_buffer) >= 2:
-            payload_len = self._rx_buffer[1]
-            frame_len = 2 + payload_len
-            if len(self._rx_buffer) < frame_len:
-                break
-            packet = bytes(self._rx_buffer[:frame_len])
-            del self._rx_buffer[:frame_len]
+        for packet in packets:
             self.process_packet(packet)
