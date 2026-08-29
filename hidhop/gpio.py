@@ -8,30 +8,35 @@ from hidhop import constants as c
 
 class GPIOController:
     def __init__(self):
+        self._active_low = False
         self._led_ios = self._init_led_ios()
         self._led_state = 0
 
     def _init_led_ios(self):
-        led_pin_names = [
-            ("LED_RED", "LED_GREEN", "LED_BLUE"),
-            ("LEDR", "LEDG", "LEDB"),
-            ("D0", "D1", "D2"),
+        led_pin_groups = [
+            (("LED_RED", "LED_GREEN", "LED_BLUE"), True),
+            (("LEDR", "LEDG", "LEDB"), False),
+            (("D0", "D1", "D2"), False),
         ]
         resolved = []
-        for group in led_pin_names:
+        active_low = False
+        for group, group_active_low in led_pin_groups:
             if all(hasattr(board, name) for name in group):
                 for name in group:
                     resolved.append(getattr(board, name))
+                active_low = group_active_low
                 break
         if not resolved and hasattr(board, "LED"):
             resolved.append(getattr(board, "LED"))
+            active_low = False
 
+        self._active_low = active_low
         led_ios = []
         for pin in resolved[: c.GPIO_LED_COUNT]:
             try:
                 io = digitalio.DigitalInOut(pin)
                 io.direction = digitalio.Direction.OUTPUT
-                io.value = False
+                io.value = active_low
                 led_ios.append(io)
             except Exception:
                 pass
@@ -39,7 +44,8 @@ class GPIOController:
 
     def _apply(self):
         for index, io in enumerate(self._led_ios):
-            io.value = bool(self._led_state & (1 << index))
+            on = bool(self._led_state & (1 << index))
+            io.value = (not on) if self._active_low else on
 
     def set_led(self, led_index, state):
         if led_index == 0xFF:

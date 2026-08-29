@@ -6,11 +6,12 @@ from hidhop import constants as c
 
 
 def constant_time_equals(a, b):
-    if len(a) != len(b):
-        return False
-    diff = 0
-    for idx in range(len(a)):
-        diff |= a[idx] ^ b[idx]
+    max_len = c.MAX_PIN_LENGTH
+    diff = len(a) ^ len(b)
+    for idx in range(max_len):
+        byte_a = a[idx] if idx < len(a) else 0
+        byte_b = b[idx] if idx < len(b) else 0
+        diff |= byte_a ^ byte_b
     return diff == 0
 
 

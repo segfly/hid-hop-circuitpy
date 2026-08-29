@@ -42,10 +42,14 @@ class HIDHopBridge:
         self.service = HIDHopService()
         self._connected = False
         self._start_time = time.monotonic()
-        self._apply_advertised_name(self.config.device_name)
+        self._rx_buffer = bytearray()
+        self._start_advertising(self.config.device_name)
 
-    def _apply_advertised_name(self, name):
+    def _set_radio_name(self, name):
         self.ble.name = name
+
+    def _start_advertising(self, name):
+        self._set_radio_name(name)
         advertisement = ProvideServicesAdvertisement(self.service)
         advertisement.complete_name = name
         self.ble.stop_advertising()
@@ -61,8 +65,9 @@ class HIDHopBridge:
         is_connected = bool(self.ble.connected)
         if self._connected and not is_connected:
             self.pin_auth.reset_session()
+            self._rx_buffer = bytearray()
         if not is_connected and not self.ble.advertising:
-            self._apply_advertised_name(self.config.device_name)
+            self._start_advertising(self.config.device_name)
         self._connected = is_connected
 
     def _require_auth(self, cmd):
@@ -134,7 +139,7 @@ class HIDHopBridge:
             name = raw.decode("utf-8")
             if not self.config.set_name(name):
                 raise ValueError("invalid name")
-            self._apply_advertised_name(self.config.device_name)
+            self._set_radio_name(self.config.device_name)
             self._send_status(c.STATUS_OK, cmd)
         elif cmd == c.CMD_GET_NAME:
             if payload:
@@ -189,7 +194,18 @@ class HIDHopBridge:
             self._update_connection_state()
             incoming = self.service.command
             if self.ble.connected and incoming.in_waiting:
-                packet = incoming.read(incoming.in_waiting)
-                if packet:
-                    self.process_packet(bytes(packet))
+                chunk = incoming.read(incoming.in_waiting)
+                if chunk:
+                    self._feed(bytes(chunk))
             time.sleep(0.01)
+
+    def _feed(self, chunk):
+        self._rx_buffer.extend(chunk)
+        while len(self._rx_buffer) >= 2:
+            payload_len = self._rx_buffer[1]
+            frame_len = 2 + payload_len
+            if len(self._rx_buffer) < frame_len:
+                break
+            packet = bytes(self._rx_buffer[:frame_len])
+            del self._rx_buffer[:frame_len]
+            self.process_packet(packet)
